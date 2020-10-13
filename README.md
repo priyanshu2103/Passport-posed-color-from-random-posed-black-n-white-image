@@ -1,2 +1,1 @@
-# Among-Us-3D
-3D reconstruction of Among Us
+# Generating passport posed color photos from random posed black-n-white photos
