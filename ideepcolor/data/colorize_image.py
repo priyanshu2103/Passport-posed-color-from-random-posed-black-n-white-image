@@ -403,13 +403,13 @@ class ColorizeImageCaffe(ColorizeImageBase):
 
         # automatically set cluster centers
         if len(self.net.params[self.pred_ab_layer][0].data[...].shape) == 4 and self.net.params[self.pred_ab_layer][0].data[...].shape[1] == 313:
-            print('Setting ab cluster centers in layer: %s' % self.pred_ab_layer)
+            # print('Setting ab cluster centers in layer: %s' % self.pred_ab_layer)
             self.net.params[self.pred_ab_layer][0].data[:, :, 0, 0] = self.pts_in_hull.T
 
         # automatically set upsampling kernel
         for layer in self.net._layer_names:
             if layer[-3:] == '_us':
-                print('Setting upsampling layer kernel: %s' % layer)
+                # print('Setting upsampling layer kernel: %s' % layer)
                 self.net.params[layer][0].data[:, 0, :, :] = np.array(((.25, .5, .25, 0), (.5, 1., .5, 0), (.25, .5, .25, 0), (0, 0, 0, 0)))[np.newaxis, :, :]
 
     # ***** Call forward *****
