@@ -1,8 +1,51 @@
-import numpy as np
 import cv2
-from faceDetection import get_skin_color
-from face_landmark_detection import getEyesMouth
-from otherFaceDetection import new_skin_color
+import numpy as np
+from sklearn.cluster import KMeans
+import argparse
+
+def get_dominant_color(image_file):
+    # Apply k-Means Clustering.
+    image = cv2.cvtColor(image_file, cv2.COLOR_BGR2RGB)
+    image = image.reshape((image.shape[0] * image.shape[1], 3))
+    clt = KMeans(n_clusters = 4)
+    clt.fit(image)
+
+    def centroid_histogram(clt):
+    	# Grab the number of different clusters and create a histogram
+    	# based on the number of pixels assigned to each cluster.
+    	numLabels = np.arange(0, len(np.unique(clt.labels_)) + 1)
+    	(hist, _) = np.histogram(clt.labels_, bins = numLabels)
+
+    	# Normalize the histogram, such that it sums to one.
+    	hist = hist.astype("float")
+    	hist /= hist.sum()
+
+    	# Return the histogram.
+    	return hist
+
+    def get_color(hist, centroids):
+
+    	# Obtain the color with maximum percentage of area covered.
+    	maxi=0
+    	COLOR=[0,0,0]
+
+    	# Loop over the percentage of each cluster and the color of
+    	# each cluster.
+    	for (percent, color) in zip(hist, centroids):
+    		if(percent>maxi):
+    			if(skin(color)):
+    				COLOR=color
+    	return COLOR
+
+    # Obtain the color and convert it to HSV type
+    hist = centroid_histogram(clt)
+    skin_color = get_color(hist, clt.cluster_centers_)
+    skin_temp2 = np.uint8([[skin_color]])
+    skin_color = cv2.cvtColor(skin_temp2,cv2.COLOR_RGB2HSV)
+    skin_color=skin_color[0][0]
+
+    # Return the color.
+    return skin_color
 
 def skinRange(H,S,V):
     e8 = (H<=25) and (H>=0)
@@ -10,13 +53,39 @@ def skinRange(H,S,V):
     e10 = (V<=255) and (V>=50)
     return (e8 and e9 and e10)
 
-def doDiff(img,want_color1,skin_color,size):
+def skin(color):
+	temp = np.uint8([[color]])
+	color = cv2.cvtColor(temp,cv2.COLOR_RGB2HSV)
+	color=color[0][0]
+	return skinRange(color[0],color[1],color[2])
+
+# This function is meant to give the skin color of the person by detecting face and then
+# applying k-Means Clustering.
+def get_skin_color(img):
+
+	# Load the face detector.
+	face_cascade =cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+
+	# Convert to grayscale image.
+	gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+	# Detect face in the image.
+	faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+
+	# If a face is detected.
+	if(len(faces)>0):
+		for (x,y,w,h) in faces:
+			print(x, y, w, h)
+
+			# Take out the face from the image.
+			image=img[y:y+h,x:x+h]
+            skin_color = get_dominant_color(image)
+            return skin_color
+	else return None
+
+
+def transfer_color(img,want_color1,skin_color,size):
     print(skin_color)
-    # skin_color = []
-    # skin_color.append(30)
-    # skin_color.append(30)
-    # skin_color.append(30)
-    # skin_color[2] += 30
     diff01=want_color1[0]/skin_color[0]
     diff02=(255-want_color1[0])/(255-skin_color[0])
     diff03=(255*(want_color1[0]-skin_color[0]))/(255-skin_color[0])
@@ -31,16 +100,16 @@ def doDiff(img,want_color1,skin_color,size):
     diff3=[diff03,diff13,diff23]
     for i in range(size[0]):
         for j in range(size[1]):
-            doDiffHelp(img,i,j,skin_color,diff1,diff2,diff3)
+            helper(img,i,j,skin_color,diff1,diff2,diff3)
 
-def doDiffHelp(img,i,j,skin_color,diff1,diff2,diff3):
+def helper(img,i,j,skin_color,diff1,diff2,diff3):
     for k in range(3):
         if(img[i,j,k]<skin_color[k]):
             img[i,j,k]*=diff1[k]
         else:
             img[i,j,k]=(diff2[k]*img[i,j,k])+diff3[k]
 
-def make_lower_upper(skin_color,Hue,Saturation,Value):
+def get_lower_upper_range(skin_color,Hue,Saturation,Value):
     if(skin_color[0]>Hue):
     	if(skin_color[0]>(180-Hue)):
     		if(skin_color[1]>Saturation+10):
@@ -93,19 +162,18 @@ def change_skin(image_file,want_color1,output_path):
 
     # Define the upper and lower boundaries of the HSV pixel
     # intensities to be considered 'skin'
-    (faceBool,skin_color)=get_skin_color(img)
-    if(skin_color[0]==0 and skin_color[1]==0 and skin_color[2]==0):
+    skin_color=get_skin_color(img)
+    if(skin_color is None):
     	lower=np.array([0, 58,50], dtype = "uint8")
     	upper=np.array([25, 173,255], dtype = "uint8")
     	skinMask=cv2.inRange(converted, lower, upper)
     	tmpImage=cv2.bitwise_and(img,img,mask=skinMask)
-    	skin_color=new_skin_color(tmpImage)
+    	skin_color=get_dominant_color(tmpImage)
     else:
-    # if(skinRange(skin_color[0],skin_color[1],skin_color[2])):
     	Hue=10
     	Saturation=65
     	Value=50
-    	result=make_lower_upper(skin_color,Hue,Saturation,Value)
+    	result=get_lower_upper_range(skin_color,Hue,Saturation,Value)
     	if(result[0]):
     		lower1=result[1]
     		upper1=result[2]
@@ -121,62 +189,39 @@ def change_skin(image_file,want_color1,output_path):
 
     skinMaskInv=cv2.bitwise_not(skinMask)
     skin_color = np.uint8([[skin_color]])
-    print("ssss ", skin_color)
+    # print("ssss ", skin_color)
     skin_color = cv2.cvtColor(skin_color,cv2.COLOR_HSV2RGB)
     skin_color=skin_color[0][0]
     skin_color=np.int16(skin_color)
     want_color1=np.int16(want_color1)
 
     # Change the color maintaining the texture.
-    doDiff(img1,want_color1,skin_color,size)
+    transfer_color(img1,want_color1,skin_color,size)
     img2=np.uint8(img1)
     img2=cv2.cvtColor(img2,cv2.COLOR_RGB2BGR)
 
     # Get the two images ie. the skin and the background.
     imgLeft=cv2.bitwise_and(img,img,mask=skinMaskInv)
     skinOver = cv2.bitwise_and(img2, img2, mask = skinMask)
-
-    # # Do facial landmark optimisation if possible.
-    # skin=np.zeros((size[0],size[1],3))
-    # for i in range(size[0]):
-    # 	for j in range (size[1]):
-    # 		if(faceBool):
-    # 			(le,re,mo)=getEyesMouth(img)
-    # 			le=np.array(le,dtype=np.int32)
-    # 			re=np.array(re,dtype=np.int32)
-    # 			mo=np.array(mo,dtype=np.int32)
-    # 			if((len(le)>0 and cv2.pointPolygonTest(le,(j,i),False)==-1.0) and (len(re)>0 and cv2.pointPolygonTest(re,(j,i),False)==-1.0) and (len(mo)>0 and cv2.pointPolygonTest(mo,(j,i),False)==-1.0)):
-    # 				if np.array_equal(skinOver[i,j,:],[0,0,0]):
-    # 					skin[i,j,:]=imgLeft[i,j,:]
-    # 				elif np.array_equal(imgLeft[i,j,:],[0,0,0]):
-    # 					skin[i,j,:]=skinOver[i,j,:]
-    # 				else:
-    # 					skin[i,j,0]=imgLeft[i,j,0]*0.5+skinOver[i,j,0]*0.5
-    # 					skin[i,j,1]=imgLeft[i,j,1]*0.5+skinOver[i,j,1]*0.5
-    # 					skin[i,j,2]=imgLeft[i,j,2]*0.5+skinOver[i,j,2]*0.5
-    # 			else:
-    # 				skin[i,j,:]=img[i,j,:]
-    # 		else:
-    # 			if np.array_equal(skinOver[i,j,:],[0,0,0]):
-    # 				skin[i,j,:]=imgLeft[i,j,:]
-    # 			elif np.array_equal(imgLeft[i,j,:],[0,0,0]):
-    # 				skin[i,j,:]=skinOver[i,j,:]
-    # 			else:
-    # 				skin[i,j,0]=imgLeft[i,j,0]*0.5+skinOver[i,j,0]*0.5
-    # 				skin[i,j,1]=imgLeft[i,j,1]*0.5+skinOver[i,j,1]*0.5
-    # 				skin[i,j,2]=imgLeft[i,j,2]*0.5+skinOver[i,j,2]*0.5
-
     skin = cv2.add(imgLeft,skinOver)
-    # kernel_sharpening=np.array([[-1,-5,-1], [-5, -1,-1], [-5,-1,-5]])
-    # skin = cv2.filter2D(skin,-1,kernel_sharpening)
-    # cv2.GaussianBlur(skin, im, cv2.Size(0, 0), 3)
-    # cv2.addWeighted(skin, 1.5, im, -0.5, 0, im)
-    # skin = im
-    # cv2.GaussianBlur(skin, (0,0), sigmaX=3, sigmaY=3, borderType = cv2.BORDER_DEFAULT)
-
-    # Return the Byte String of the output image.
 
     res=cv2.imencode('.jpg',skin)[1].tostring()
     return res
 
-# change_skin("1.jpg",[115, 65, 43])
+if __name__ == "__main__":
+	parser=argparse.ArgumentParser()
+	parser.add_argument("--img", help="Image to be changed")
+	parser.add_argument("--race", help="Required skin color race")
+	parser.add_argument("--res", help="Path where image is to be saved")
+	args=parser.parse_args()
+
+	with open(args.img,'rb') as inputImage:
+		if args.race=="Asian":
+			b = [180, 103, 71]
+		elif args.race=="European":
+			b = [220, 209, 194]
+		else:
+			b = [111, 79, 29]
+		result=change_skin(inputImage,b,args.res)
+	with open(args.res,'wb') as resultFile:
+		resultFile.write(result)
