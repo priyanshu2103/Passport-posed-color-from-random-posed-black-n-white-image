@@ -214,11 +214,11 @@ if __name__ == "__main__":
 
 	with open(args.img,'rb') as inputImage:
 		if args.race=="Asian":
-			b = [180, 103, 71]
+			b = [220, 180, 125]
 		elif args.race=="European":
-			b = [220, 209, 194]
+			b = [210, 199, 184]
 		else:
-			b = [111, 79, 29]
+			b = [104, 59, 18]
 		result=change_skin(inputImage,b,args.res)
 	with open(args.res,'wb') as resultFile:
 		resultFile.write(result)
