@@ -5,7 +5,8 @@ from skimage import color
 from sklearn.cluster import KMeans
 import os
 from scipy.ndimage.interpolation import zoom
-
+import warnings
+warnings.filterwarnings("ignore")
 
 def create_temp_directory(path_template, N=1e8):
     print(path_template)
